@@ -2349,7 +2349,114 @@ const api = {
     const method = request.method;
 
     const config = await getConfig(env);
-
+	// 在api.handleRequest函数中添加以下代码（可放在其他API处理逻辑之后）
+	// 新增自定义通知API
+	if (path === '/custom-notify' && method === 'POST') {
+	  try {
+	    const body = await request.json();
+	    const { title, content, password } = body;
+	
+	    // 验证必要参数
+	    if (!title || !content || !password) {
+	      return new Response(
+	        JSON.stringify({ success: false, message: '缺少必要参数：title、content、password' }),
+	        { status: 400, headers: { 'Content-Type': 'application/json' } }
+	      );
+	    }
+	
+	    // 验证密码（这里使用配置中的ADMIN_PASSWORD作为验证密码，可根据需要修改）
+	    if (password !== config.ADMIN_PASSWORD) {
+	      return new Response(
+	        JSON.stringify({ success: false, message: '密码错误，拒绝发送' }),
+	        { status: 403, headers: { 'Content-Type': 'application/json' } }
+	      );
+	    }
+	
+	    // 获取已启用的通知渠道
+	    const enabledNotifiers = config.ENABLED_NOTIFIERS || [];
+	    if (enabledNotifiers.length === 0) {
+	      return new Response(
+	        JSON.stringify({ success: false, message: '未配置任何启用的通知渠道' }),
+	        { status: 400, headers: { 'Content-Type': 'application/json' } }
+	      );
+	    }
+	
+	    // 存储各渠道发送结果
+	    const results = {};
+	    let allSuccess = true;
+	
+	    // 遍历所有启用的渠道发送通知
+	    for (const notifier of enabledNotifiers) {
+	      try {
+	        let success = false;
+	        switch (notifier) {
+	          case 'telegram':
+	            success = await sendTelegramNotification(
+	              `*${title}*\n\n${content}\n\n发送时间: ${formatBeijingTime()}`,
+	              config
+	            );
+	            break;
+	          case 'notifyx':
+	            success = await sendNotifyXNotification(
+	              title,
+	              `## ${title}\n\n${content}\n\n发送时间: ${formatBeijingTime()}`,
+	              title,
+	              config
+	            );
+	            break;
+	          case 'webhook':
+	            success = await sendWebhookNotification(
+	              title,
+	              `${content}\n\n发送时间: ${formatBeijingTime()}`,
+	              config
+	            );
+	            break;
+	          case 'wechatbot':
+	            success = await sendWechatBotNotification(
+	              title,
+	              `${content}\n\n发送时间: ${formatBeijingTime()}`,
+	              config
+	            );
+	            break;
+	          case 'email':
+	            success = await sendEmailNotification(
+	              title,
+	              `${content}\n\n发送时间: ${formatBeijingTime()}`,
+	              config
+	            );
+	            break;
+	          default:
+	            console.warn(`未知的通知渠道: ${notifier}`);
+	            success = false;
+	        }
+	        results[notifier] = { success };
+	        if (!success) allSuccess = false;
+	      } catch (error) {
+	        console.error(`渠道${notifier}发送失败:`, error);
+	        results[notifier] = {
+	          success: false,
+	          error: error.message
+	        };
+	        allSuccess = false;
+	      }
+	    }
+	
+	    return new Response(
+	      JSON.stringify({
+	        success: allSuccess,
+	        message: allSuccess ? '所有渠道通知发送成功' : '部分渠道通知发送失败',
+	        results
+	      }),
+	      { headers: { 'Content-Type': 'application/json' } }
+	    );
+	  } catch (error) {
+	    console.error('自定义通知API错误:', error);
+	    return new Response(
+	      JSON.stringify({ success: false, message: '处理请求失败: ' + error.message }),
+	      { status: 500, headers: { 'Content-Type': 'application/json' } }
+	    );
+	  }
+	}
     if (path === '/login' && method === 'POST') {
       const body = await request.json();
 
